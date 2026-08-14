@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- OTA updates from GitHub Releases, and collecting meals from the inbox. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Lets the app hand a downloaded APK to the system installer. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.GetFit">
+
+        <!-- No fixed orientation: the UI adapts to portrait, landscape and
+             tablet widths. configChanges keeps Compose state across rotation
+             rather than tearing the activity down mid-set.
+
+             adjustResize is stated rather than left to the system: the calorie
+             target and the name are typed into fields low on the settings
+             screen, and the window has to shrink so they stay above the
+             keyboard instead of being panned off the screen. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:windowSoftInputMode="adjustResize"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Meals handed over by link. The host differs by channel —
+                 getfit://meal for production, getfit://meal-dev for a dev build
+                 — so with both installed a link opens the one it was made for
+                 instead of raising a chooser. The value comes from
+                 app/build.gradle.kts, which sets the matching deep_link_host
+                 string from the same expression.
+
+                 singleTask above, so a link arriving while the app is open
+                 reaches the running activity through onNewIntent rather than
+                 stacking a second copy of it. -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="getfit" android:host="${deepLinkHost}" />
+            </intent-filter>
+        </activity>
+
+        <!-- Serves the downloaded APK to the package installer via a content URI. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+
+</manifest>

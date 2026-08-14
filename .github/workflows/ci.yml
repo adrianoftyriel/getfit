@@ -1,0 +1,127 @@
+name: CI
+
+# Pre-merge checks. Runs on the dev branch and on every pull request aimed at
+# dev or main, so breakage is caught before it reaches main and triggers a
+# release.
+#
+# On a push to dev it also publishes the build as a dev-channel prerelease, so
+# the in-app updater can offer it to anyone running a dev install. Prereleases
+# are used deliberately: GitHub's "latest release" endpoint skips them, so a
+# production install never sees a dev build. Pull requests only build and check
+# — they never publish, which keeps a PR from a fork from shipping anything.
+on:
+  push:
+    branches: [ dev ]
+  pull_request:
+    branches: [ main, dev ]
+  workflow_dispatch:
+
+# Needed to publish the dev-channel prerelease below.
+permissions:
+  contents: write
+
+# A newer push to the same branch or PR makes the in-flight run obsolete.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and check
+    runs-on: ubuntu-latest
+    env:
+      # Stamp the APK as a dev-channel build exactly when it is a build of the
+      # dev branch, which is exactly when it can be published below. Pull
+      # request builds run against refs/pull/N/merge, so they stay unstamped at
+      # <series>.0-dev: they are never published and must not claim a channel
+      # version.
+      #
+      # This condition has to stay in step with the publish steps' own. Stamping
+      # a build the publish steps would ship, or shipping one this left
+      # unstamped, both end the same way — an APK claiming versionCode 1, which
+      # the updater can never see as an upgrade over anything.
+      GETFIT_CHANNEL: ${{ github.ref == 'refs/heads/dev' && 'dev' || '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest --no-daemon
+
+      - name: Run Android lint
+        run: ./gradlew lintDebug --no-daemon
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: GetFit-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload lint and test reports
+        # Reports are most useful precisely when a step above failed.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GetFit-reports
+          path: |
+            app/build/reports/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # Everything below publishes the dev channel, and only ever from the dev
+      # branch itself, after it has built, tested and linted clean above.
+      #
+      # Gated on the branch alone rather than on the event, which is how
+      # release.yml gates main. A pull request is still excluded without needing
+      # to name it: a PR build runs against refs/pull/N/merge, never
+      # refs/heads/dev, so a fork cannot ship anything.
+      - name: Stage dev APK
+        id: stage
+        if: github.ref == 'refs/heads/dev'
+        run: |
+          set -euo pipefail
+          # The series comes from gradle.properties, which is the same file the
+          # build read when it stamped the APK — so the tag and what is inside
+          # it cannot name different versions.
+          series="$(sed -n 's/^getfitVersionSeries=//p' gradle.properties)"
+          test -n "$series"
+          version="v${series}.${{ github.run_number }}-dev"
+          src="app/build/outputs/apk/debug/app-debug.apk"
+          dest="GetFit-${version}.apk"
+          cp "$src" "$dest"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "apk=$dest" >> "$GITHUB_OUTPUT"
+
+      - name: Publish dev channel prerelease
+        if: github.ref == 'refs/heads/dev'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "${{ steps.stage.outputs.version }}" \
+            "${{ steps.stage.outputs.apk }}" \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "GetFit ${{ steps.stage.outputs.version }}" \
+            --prerelease \
+            --notes "Automated **dev channel** build from \`${{ github.sha }}\` on \`dev\`.
+
+          Preview build: newer than production, and less tested. A dev APK
+          installs as a separate app (\`org.getfit.app.dev\`, shown as *GetFit
+          DEV*), so it sits alongside a production install rather than replacing
+          it. Marked as a prerelease so production installs never see it."

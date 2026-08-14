@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The mark: a dumbbell, straight on.
+
+  Sized to the adaptive icon's safe zone rather than to the viewport. Android
+  masks an adaptive icon to whatever shape the launcher uses and may scale it up
+  by a quarter, so only the central 66dp circle of these 108 is guaranteed to
+  survive — every path here stays inside a radius of 33 from the centre, the
+  outermost corner of the outer plates reaching 29.
+
+  White on both channels. The colour that tells a dev build from a production
+  one is the ground behind this; see ic_launcher_background.xml.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Bar, tucked under the inner plates at both ends. -->
+    <path android:fillColor="@color/icon_ink" android:pathData="M36,51h36v6h-36z" />
+
+    <!-- Inner plates, the tall pair. -->
+    <path android:fillColor="@color/icon_ink" android:pathData="M32,43h8v22h-8z" />
+    <path android:fillColor="@color/icon_ink" android:pathData="M68,43h8v22h-8z" />
+
+    <!-- Outer plates, shorter, which is what reads as a dumbbell rather than a
+         capital I at small sizes. -->
+    <path android:fillColor="@color/icon_ink" android:pathData="M26,47h6v14h-6z" />
+    <path android:fillColor="@color/icon_ink" android:pathData="M76,47h6v14h-6z" />
+</vector>

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The ground the mark sits on, and the one thing that tells the two installs
+  apart in the app drawer: deep orange on a production build, deep teal on a dev
+  one.
+
+  It references @color/ic_launcher_background rather than a literal because the
+  build generates that colour from the same isDevBuild flag that picks the
+  applicationId and the launcher label — see resValue in app/build.gradle.kts.
+  The three have to move together, or a dev package ends up wearing the
+  production colours.
+
+  Drawn well past the 108 viewport: an adaptive icon's background is scaled up
+  and masked, and anything short of full bleed shows as a pale edge under the
+  mask.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="@color/ic_launcher_background"
+        android:pathData="M-20,-20h148v148h-148z" />
+</vector>

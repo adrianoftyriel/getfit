@@ -1,0 +1,93 @@
+name: Build and Release APK
+
+# Build an APK and publish it as a GitHub Release whenever commits land on main
+# (for example when a pull request is merged). Can also be run manually.
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+# Allow the built-in token to create releases and upload the APK.
+permissions:
+  contents: write
+
+# Don't let two pushes to main race on the same release.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build APK and publish release
+    # workflow_dispatch can be aimed at any branch from the Actions UI. Releases
+    # are what the in-app updater installs, so only main may produce one —
+    # anything else is a no-op rather than shipping unreviewed code to everyone.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      # Stamps the APK as a production-channel build, versioned with the run
+      # number that matches the tag published below.
+      GETFIT_CHANNEL: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Stage APK for release
+        id: stage
+        run: |
+          set -euo pipefail
+          # The series comes from gradle.properties, which is the same file the
+          # build read when it stamped the APK — so the tag and what is inside
+          # it cannot name different versions.
+          series="$(sed -n 's/^getfitVersionSeries=//p' gradle.properties)"
+          test -n "$series"
+          version="v${series}.${{ github.run_number }}"
+          src="app/build/outputs/apk/debug/app-debug.apk"
+          dest="GetFit-${version}.apk"
+          cp "$src" "$dest"
+          # The same build again under a name that never changes. GitHub's
+          # /releases/latest/download/<name> redirect needs a constant file
+          # name, so this second copy is what makes a permanent download link
+          # possible — the versioned copy stays as the traceable one.
+          cp "$src" "GetFit.apk"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "apk=$dest" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GetFit-apk
+          path: ${{ steps.stage.outputs.apk }}
+          if-no-files-found: error
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "${{ steps.stage.outputs.version }}" \
+            "${{ steps.stage.outputs.apk }}" \
+            "GetFit.apk" \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "GetFit ${{ steps.stage.outputs.version }}" \
+            --notes "Automated release built from \`${{ github.sha }}\` on push to \`main\`.
+
+          Download **${{ steps.stage.outputs.apk }}** below and install it on an Android device (you may need to allow *Install unknown apps*). This is a debug-signed build.
+
+          Both files below are the same build. \`GetFit.apk\` is a copy under a fixed name, so this link always fetches the newest release and can be bookmarked or shared:
+
+          https://github.com/${{ github.repository }}/releases/latest/download/GetFit.apk"

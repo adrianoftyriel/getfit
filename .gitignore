@@ -1,0 +1,49 @@
+# Built application files
+*.apk
+*.aar
+*.ap_
+*.aab
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+release/
+
+# Gradle files
+.gradle/
+build/
+
+# Local configuration file (sdk path, etc)
+local.properties
+
+# Log Files
+*.log
+
+# Android Studio / IntelliJ
+*.iml
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Keystore files
+*.jks
+*.keystore
+# ...except the shared debug keystore, committed so every CI build signs
+# identically and the in-app updater can install updates over each other.
+!app/debug.keystore
+
+# Meals staged by the meal-photo skill. These belong on the nutrition-inbox
+# branch and nowhere else: a meal is not a change to the code, and one committed
+# to dev would appear in a diff and ship inside a release.
+nutrition/inbox/
+
+# OS
+.DS_Store
