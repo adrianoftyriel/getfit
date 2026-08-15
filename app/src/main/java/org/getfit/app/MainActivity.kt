@@ -18,6 +18,7 @@ import org.getfit.app.nutrition.MealInbox
 import org.getfit.app.nutrition.MealLink
 import org.getfit.app.nutrition.MealLinkResult
 import org.getfit.app.nutrition.NutritionRepository
+import org.getfit.app.progress.ProgressRepository
 import org.getfit.app.settings.SettingsRepository
 import org.getfit.app.ui.AppEnv
 import org.getfit.app.ui.AppRoot
@@ -45,6 +46,7 @@ class MainActivity : ComponentActivity() {
             settingsRepository = SettingsRepository(applicationContext),
             workouts = WorkoutRepository(applicationContext),
             nutrition = NutritionRepository(applicationContext),
+            progress = ProgressRepository(applicationContext),
             demos = DemoRepository(applicationContext),
             inbox = MealInbox(),
             updater = Updater(this),
@@ -60,6 +62,13 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             env.workouts.load()
             env.nutrition.load()
+            env.progress.load()
+
+            // Progress photographs are written when they are picked rather than
+            // when the entry is saved, so an abandoned entry leaves files
+            // behind. Collected here, at launch, which is the one moment no
+            // half-written entry can exist to be caught by it.
+            env.progress.photos.pruneOrphans(env.progress.referencedPhotos())
 
             // Re-arm on every launch as well as on boot. An alarm can be lost
             // to a force-stop or to the battery optimiser, neither of which
