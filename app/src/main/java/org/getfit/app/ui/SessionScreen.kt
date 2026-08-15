@@ -27,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -55,12 +56,17 @@ import org.getfit.app.workout.volumeKg
 /**
  * Logging a session while it happens.
  *
- * Built around one number: taps per set. A set that went to target is the
- * common case by a wide margin, so it costs exactly one tap — the targets came
- * from the plan and are already on the chip. Anything else is a long press,
- * which opens the set to be corrected. Making every set cost three fields would
- * mean the phone comes out between sets, which is how logging gets abandoned
- * halfway through a session.
+ * Built around one number: taps per set. A set costs a tap to open its dial and
+ * a tap in the middle of the dial to log it — and in between, the reps and the
+ * weight are a thumb on a ring rather than a keyboard, because this screen is
+ * used standing up, one-handed, halfway through a session. The dial opens on
+ * the targets the plan already asked for, so the common case of a set that went
+ * to plan is two taps and no reading. Making every set cost three typed fields
+ * would mean the phone comes out between sets, which is how logging gets
+ * abandoned halfway through.
+ *
+ * A long press still opens the keyboard, for the set that needs an exact figure
+ * the dial's detents do not land on.
  *
  * Every tap writes through to the store rather than being held until the end.
  * A session is forty minutes long and a phone can be killed at any point in it.
@@ -71,6 +77,7 @@ fun SessionScreen(env: AppEnv, onBack: () -> Unit, onShowDemo: (String) -> Unit)
     val session by env.workouts.activeSession.collectAsState(initial = null)
     var units by remember { mutableStateOf(UnitSystem.METRIC) }
     var editing by remember { mutableStateOf<SetAddress?>(null) }
+    var dialling by remember { mutableStateOf<DialTarget?>(null) }
     var confirmFinish by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -103,6 +110,70 @@ fun SessionScreen(env: AppEnv, onBack: () -> Unit, onShowDemo: (String) -> Unit)
                     scope.launch {
                         env.workouts.updateSession(current.withSet(address, updated))
                         editing = null
+                    }
+                },
+            )
+        }
+    }
+
+    // The dial, over whichever set is being logged. A target with no set index
+    // is a set beyond the plan: it is appended when the dial is tapped and not
+    // before, so backing out of one does not leave an empty set behind.
+    val target = dialling
+    val targetExercise = target?.let { current.exercises.getOrNull(it.exerciseIndex) }
+    if (target != null && targetExercise != null) {
+        val setIndex = target.setIndex
+        val existing = setIndex?.let { targetExercise.sets.getOrNull(it) }
+        // An extra set copies the last one's targets, because an extra set is
+        // nearly always the same set again.
+        val seed = existing
+            ?: targetExercise.sets.lastOrNull()?.copy(completed = false)
+            ?: LoggedSet(reps = 8, weightKg = 0.0, completed = false)
+        val exercise = ExerciseCatalog.byId(targetExercise.exerciseId)
+        val undo: (() -> Unit)? =
+            if (setIndex != null && existing != null && existing.completed) {
+                {
+                    scope.launch {
+                        env.workouts.updateSession(
+                            current.withSet(
+                                SetAddress(target.exerciseIndex, setIndex),
+                                existing.copy(completed = false),
+                            )
+                        )
+                        dialling = null
+                    }
+                }
+            } else {
+                null
+            }
+
+        key(target) {
+            SetDialDialog(
+                exerciseName = exercise?.name ?: targetExercise.exerciseId,
+                setNumber = (setIndex ?: targetExercise.sets.size) + 1,
+                set = seed,
+                bodyweight = exercise?.bodyweight == true,
+                units = units,
+                onNotDone = undo,
+                onDismiss = { dialling = null },
+                onLog = { logged ->
+                    scope.launch {
+                        env.workouts.updateSession(
+                            if (setIndex != null) {
+                                current.withSet(
+                                    SetAddress(target.exerciseIndex, setIndex),
+                                    logged,
+                                )
+                            } else {
+                                current.withExercise(
+                                    target.exerciseIndex,
+                                    targetExercise.copy(
+                                        sets = targetExercise.sets + logged,
+                                    ),
+                                )
+                            }
+                        )
+                        dialling = null
                     }
                 },
             )
@@ -159,36 +230,13 @@ fun SessionScreen(env: AppEnv, onBack: () -> Unit, onShowDemo: (String) -> Unit)
                     ExerciseBlock(
                         logged = logged,
                         units = units,
-                        onToggleSet = { setIndex ->
-                            scope.launch {
-                                val address = SetAddress(exerciseIndex, setIndex)
-                                val set = logged.sets[setIndex]
-                                env.workouts.updateSession(
-                                    current.withSet(address, set.copy(completed = !set.completed))
-                                )
-                            }
+                        onLogSet = { setIndex ->
+                            dialling = DialTarget(exerciseIndex, setIndex)
                         },
                         onEditSet = { setIndex ->
                             editing = SetAddress(exerciseIndex, setIndex)
                         },
-                        onAddSet = {
-                            scope.launch {
-                                // A set beyond the plan copies the last one's
-                                // targets, because an extra set is nearly
-                                // always the same set again.
-                                val template = logged.sets.lastOrNull()
-                                    ?: LoggedSet(reps = 8, weightKg = 0.0)
-                                env.workouts.updateSession(
-                                    current.withExercise(
-                                        exerciseIndex,
-                                        logged.copy(
-                                            sets = logged.sets +
-                                                template.copy(completed = true),
-                                        ),
-                                    )
-                                )
-                            }
-                        },
+                        onAddSet = { dialling = DialTarget(exerciseIndex, null) },
                         onShowDemo = { onShowDemo(logged.exerciseId) },
                     )
                 }
@@ -201,6 +249,12 @@ fun SessionScreen(env: AppEnv, onBack: () -> Unit, onShowDemo: (String) -> Unit)
 
 /** Which set, in a session. */
 private data class SetAddress(val exerciseIndex: Int, val setIndex: Int)
+
+/**
+ * Which set the dial is open on. A null [setIndex] means one that does not
+ * exist yet — an extra set, which only becomes real if the dial is tapped.
+ */
+private data class DialTarget(val exerciseIndex: Int, val setIndex: Int?)
 
 private fun WorkoutSession.withExercise(index: Int, replacement: LoggedExercise): WorkoutSession =
     copy(exercises = exercises.toMutableList().also { it[index] = replacement })
@@ -241,7 +295,7 @@ private fun Stat(label: String, value: String) {
 private fun ExerciseBlock(
     logged: LoggedExercise,
     units: UnitSystem,
-    onToggleSet: (Int) -> Unit,
+    onLogSet: (Int) -> Unit,
     onEditSet: (Int) -> Unit,
     onAddSet: () -> Unit,
     onShowDemo: () -> Unit,
@@ -268,7 +322,7 @@ private fun ExerciseBlock(
                 TextButton(onClick = onShowDemo) { Text("How") }
             }
 
-            // One chip per set. Tap to complete at target, long press to correct.
+            // One chip per set. Tap to open its dial, long press to type.
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(logged.sets.size) { index ->
                     SetChip(
@@ -276,7 +330,7 @@ private fun ExerciseBlock(
                         number = index + 1,
                         units = units,
                         bodyweight = exercise?.bodyweight == true,
-                        onTap = { onToggleSet(index) },
+                        onTap = { onLogSet(index) },
                         onLongPress = { onEditSet(index) },
                     )
                 }
@@ -292,7 +346,9 @@ private fun ExerciseBlock(
  * One set.
  *
  * Filled when it is done, outlined when it is not, so the state of the whole
- * exercise reads at a glance from across a rack.
+ * exercise reads at a glance from across a rack. Tapping one opens its dial,
+ * whether or not it is already logged: correcting a set that came in under
+ * target is the same gesture as logging it in the first place.
  */
 // Surface has a clickable overload but no long-press one, so the gesture goes
 // on a modifier instead of into the component.
