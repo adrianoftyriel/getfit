@@ -34,13 +34,18 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.getfit.app.settings.UnitSystem
 import org.getfit.app.settings.fromKg
+import org.getfit.app.settings.fromMetres
 import org.getfit.app.settings.toKg
+import org.getfit.app.settings.toMetres
 import org.getfit.app.workout.ExerciseCatalog
+import org.getfit.app.workout.Measure
 import org.getfit.app.workout.PlanExercise
 import org.getfit.app.workout.PlannedSet
 import org.getfit.app.workout.WorkoutPlan
+import org.getfit.app.workout.asDisplayAmount
 import org.getfit.app.workout.asDisplayWeight
 import java.util.UUID
+import kotlin.math.roundToInt
 
 /**
  * Building a plan: the exercises, and the targets for each.
@@ -174,11 +179,34 @@ private class EditableExercise(
     weight: String,
 ) {
     var sets by mutableStateOf(sets)
+
+    /** Reps, or minutes where the movement is counted on a clock. */
     var reps by mutableStateOf(reps)
+
+    /** Load, or distance, for the same reason. */
     var weight by mutableStateOf(weight)
+
+    val cardio: Boolean
+        get() = ExerciseCatalog.byId(exerciseId)?.measure == Measure.CARDIO
 
     fun toPlanExercise(units: UnitSystem): PlanExercise? {
         val setCount = sets.toIntOrNull()?.coerceIn(1, MAX_SETS) ?: return null
+        if (cardio) {
+            // A target of no minutes is not a target, so an unparseable or
+            // blank field refuses the row rather than planning a zero.
+            val minutes = reps.toDoubleOrNull()?.coerceIn(0.0, MAX_MINUTES) ?: return null
+            val distance = weight.toDoubleOrNull() ?: 0.0
+            return PlanExercise(
+                exerciseId = exerciseId,
+                sets = List(setCount) {
+                    PlannedSet(
+                        reps = 0,
+                        seconds = (minutes * 60).roundToInt(),
+                        metres = units.toMetres(distance).takeIf { it > 0 },
+                    )
+                },
+            )
+        }
         val repCount = reps.toIntOrNull()?.coerceIn(1, MAX_REPS) ?: return null
         val load = weight.toDoubleOrNull() ?: 0.0
         return PlanExercise(
@@ -192,12 +220,13 @@ private class EditableExercise(
     companion object {
         const val MAX_SETS = 20
         const val MAX_REPS = 500
+        const val MAX_MINUTES = 180.0
 
         fun blank(exerciseId: String) = EditableExercise(
             key = UUID.randomUUID().toString(),
             exerciseId = exerciseId,
-            sets = "3",
-            reps = "8",
+            sets = if (ExerciseCatalog.byId(exerciseId)?.measure == Measure.CARDIO) "1" else "3",
+            reps = if (ExerciseCatalog.byId(exerciseId)?.measure == Measure.CARDIO) "20" else "8",
             weight = "",
         )
 
@@ -210,16 +239,31 @@ private class EditableExercise(
          * flattens the rest to match — which is why the editor says so rather
          * than doing it silently.
          */
-        fun from(planned: PlanExercise, units: UnitSystem) = EditableExercise(
-            key = UUID.randomUUID().toString(),
-            exerciseId = planned.exerciseId,
-            sets = planned.sets.size.toString(),
-            reps = (planned.sets.firstOrNull()?.reps ?: 8).toString(),
-            weight = planned.sets.firstOrNull()?.weightKg
-                ?.takeIf { it > 0 }
-                ?.let { units.fromKg(it).asDisplayWeight() }
-                ?: "",
-        )
+        fun from(planned: PlanExercise, units: UnitSystem): EditableExercise {
+            val first = planned.sets.firstOrNull()
+            val cardio = ExerciseCatalog.byId(planned.exerciseId)?.measure == Measure.CARDIO
+            return EditableExercise(
+                key = UUID.randomUUID().toString(),
+                exerciseId = planned.exerciseId,
+                sets = planned.sets.size.toString(),
+                reps = if (cardio) {
+                    ((first?.seconds ?: 0) / 60.0).asDisplayAmount()
+                } else {
+                    (first?.reps ?: 8).toString()
+                },
+                weight = if (cardio) {
+                    first?.metres
+                        ?.takeIf { it > 0 }
+                        ?.let { units.fromMetres(it).asDisplayAmount() }
+                        ?: ""
+                } else {
+                    first?.weightKg
+                        ?.takeIf { it > 0 }
+                        ?.let { units.fromKg(it).asDisplayWeight() }
+                        ?: ""
+                },
+            )
+        }
     }
 }
 
@@ -266,23 +310,29 @@ private fun ExerciseTargetCard(
                 NumberField(
                     value = row.reps,
                     onValueChange = { row.reps = it },
-                    label = "Reps",
+                    label = if (row.cardio) "Minutes" else "Reps",
+                    allowDecimal = row.cardio,
                     modifier = Modifier.weight(1f),
                 )
                 NumberField(
                     value = row.weight,
                     onValueChange = { row.weight = it },
-                    label = units.weightSuffix,
+                    label = if (row.cardio) units.distanceSuffix else units.weightSuffix,
                     allowDecimal = true,
                     modifier = Modifier.weight(1.2f),
                 )
             }
 
-            if (exercise?.bodyweight == true) {
-                Text(
+            when {
+                row.cardio -> Text(
+                    "Counted in minutes, with distance if there is one to aim for.",
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                exercise?.bodyweight == true -> Text(
                     "Bodyweight — leave the load blank, or enter added weight only.",
                     style = MaterialTheme.typography.labelSmall,
                 )
+                else -> {}
             }
         }
     }

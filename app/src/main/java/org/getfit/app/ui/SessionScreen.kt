@@ -43,16 +43,24 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.getfit.app.settings.UnitSystem
 import org.getfit.app.settings.fromKg
+import org.getfit.app.settings.fromMetres
 import org.getfit.app.settings.toKg
+import org.getfit.app.settings.toMetres
 import org.getfit.app.ui.theme.CompletedGreen
+import org.getfit.app.workout.Exercise
 import org.getfit.app.workout.ExerciseCatalog
 import org.getfit.app.workout.LoggedExercise
 import org.getfit.app.workout.LoggedSet
+import org.getfit.app.workout.Measure
 import org.getfit.app.workout.WorkoutSession
+import org.getfit.app.workout.asDisplayAmount
 import org.getfit.app.workout.asDisplayWeight
+import org.getfit.app.workout.cardioMetres
+import org.getfit.app.workout.cardioSeconds
 import org.getfit.app.workout.completedSets
 import org.getfit.app.workout.lastCompletedSet
 import org.getfit.app.workout.volumeKg
+import kotlin.math.roundToInt
 
 /**
  * Logging a session while it happens.
@@ -111,6 +119,8 @@ fun SessionScreen(env: AppEnv, onBack: () -> Unit, onShowDemo: (String) -> Unit)
             EditSetDialog(
                 set = set,
                 units = units,
+                exercise = current.exercises.getOrNull(address.exerciseIndex)
+                    ?.let { ExerciseCatalog.byId(it.exerciseId) },
                 onDismiss = { editing = null },
                 onSave = { updated ->
                     scope.launch {
@@ -132,10 +142,10 @@ fun SessionScreen(env: AppEnv, onBack: () -> Unit, onShowDemo: (String) -> Unit)
         val existing = setIndex?.let { targetExercise.sets.getOrNull(it) }
         // An extra set copies the last one's targets, because an extra set is
         // nearly always the same set again.
+        val exercise = ExerciseCatalog.byId(targetExercise.exerciseId)
         val seed = existing
             ?: targetExercise.sets.lastOrNull()?.copy(completed = false)
-            ?: LoggedSet(reps = 8, weightKg = 0.0, completed = false)
-        val exercise = ExerciseCatalog.byId(targetExercise.exerciseId)
+            ?: blankSet(exercise)
         val undo: (() -> Unit)? =
             if (setIndex != null && existing != null && existing.completed) {
                 {
@@ -158,7 +168,7 @@ fun SessionScreen(env: AppEnv, onBack: () -> Unit, onShowDemo: (String) -> Unit)
                 exerciseName = exercise?.name ?: targetExercise.exerciseId,
                 setNumber = (setIndex ?: targetExercise.sets.size) + 1,
                 set = seed,
-                bodyweight = exercise?.bodyweight == true,
+                exercise = exercise,
                 units = units,
                 onNotDone = undo,
                 onDismiss = { dialling = null },
@@ -195,8 +205,7 @@ fun SessionScreen(env: AppEnv, onBack: () -> Unit, onShowDemo: (String) -> Unit)
                     // movement was completed — so its dial opens where it was
                     // left rather than at zero. Not done, because adding an
                     // exercise is saying what is about to happen, not what has.
-                    val seed = lastCompletedSet(history, exercise.id)
-                        ?: LoggedSet(reps = 8, weightKg = 0.0)
+                    val seed = lastCompletedSet(history, exercise.id) ?: blankSet(exercise)
                     env.workouts.updateSession(
                         current.copy(
                             exercises = current.exercises + LoggedExercise(
@@ -299,6 +308,21 @@ fun SessionScreen(env: AppEnv, onBack: () -> Unit, onShowDemo: (String) -> Unit)
     }
 }
 
+/**
+ * Where the dial opens on a movement with no history and nothing to copy.
+ *
+ * Eight reps is the usual middle of a working set; twenty minutes is the usual
+ * middle of a piece of cardio. Neither is a recommendation — both are just the
+ * shortest distance for a thumb to travel to the number that is actually meant,
+ * and neither is logged until the hub is tapped.
+ */
+private fun blankSet(exercise: Exercise?): LoggedSet =
+    if (exercise?.measure == Measure.CARDIO) {
+        LoggedSet(reps = 0, seconds = 20 * 60, completed = false)
+    } else {
+        LoggedSet(reps = 8, weightKg = 0.0, completed = false)
+    }
+
 /** Which set, in a session. */
 private data class SetAddress(val exerciseIndex: Int, val setIndex: Int)
 
@@ -320,17 +344,43 @@ private fun WorkoutSession.withSet(address: SetAddress, replacement: LoggedSet):
 @Composable
 private fun SessionSummary(session: WorkoutSession, units: UnitSystem) {
     val volume = volumeKg(session.exercises) { ExerciseCatalog.byId(it) }
+    val seconds = cardioSeconds(session.exercises) { ExerciseCatalog.byId(it) }
+    val metres = cardioMetres(session.exercises) { ExerciseCatalog.byId(it) }
     val done = completedSets(session.exercises)
     val total = session.exercises.sumOf { it.sets.size }
 
     Card(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-        Row(
+        Column(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Stat("Sets", "$done / $total")
-            Stat("Volume", "${units.fromKg(volume).asDisplayWeight()} ${units.weightSuffix}")
-            Stat("Exercises", "${session.exercises.size}")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Stat("Sets", "$done / $total")
+                Stat("Volume", "${units.fromKg(volume).asDisplayWeight()} ${units.weightSuffix}")
+                Stat("Exercises", "${session.exercises.size}")
+            }
+
+            // Reported on its own line rather than folded into the volume
+            // above: there is no honest exchange rate between a kilometre and
+            // a kilogram, and a session that was all cardio reading "0 kg" is
+            // a true statement that says nothing about what was done.
+            if (seconds > 0 || metres > 0) {
+                Text(
+                    text = buildString {
+                        append("Cardio · ${(seconds / 60.0).asDisplayAmount()} min")
+                        if (metres > 0) {
+                            append(
+                                " · ${units.fromMetres(metres).asDisplayAmount()} " +
+                                    units.distanceSuffix
+                            )
+                        }
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
         }
     }
 }
@@ -381,7 +431,7 @@ private fun ExerciseBlock(
                         set = logged.sets[index],
                         number = index + 1,
                         units = units,
-                        bodyweight = exercise?.bodyweight == true,
+                        exercise = exercise,
                         onTap = { onLogSet(index) },
                         onLongPress = { onEditSet(index) },
                     )
@@ -410,7 +460,7 @@ private fun SetChip(
     set: LoggedSet,
     number: Int,
     units: UnitSystem,
-    bodyweight: Boolean,
+    exercise: Exercise?,
     onTap: () -> Unit,
     onLongPress: () -> Unit,
 ) {
@@ -426,10 +476,22 @@ private fun SetChip(
         ) {
             Text("Set $number", style = MaterialTheme.typography.labelSmall)
             Text(
-                text = buildString {
-                    append("${set.reps}")
-                    if (!bodyweight || set.weightKg > 0) {
-                        append(" × ${units.fromKg(set.weightKg).asDisplayWeight()}")
+                text = if (exercise?.measure == Measure.CARDIO) {
+                    buildString {
+                        append("${((set.seconds ?: 0) / 60.0).asDisplayAmount()} min")
+                        set.metres?.takeIf { it > 0 }?.let { metres ->
+                            append(
+                                " · ${units.fromMetres(metres).asDisplayAmount()} " +
+                                    units.distanceSuffix
+                            )
+                        }
+                    }
+                } else {
+                    buildString {
+                        append("${set.reps}")
+                        if (exercise?.bodyweight != true || set.weightKg > 0) {
+                            append(" × ${units.fromKg(set.weightKg).asDisplayWeight()}")
+                        }
                     }
                 },
                 style = MaterialTheme.typography.titleSmall,
@@ -439,18 +501,41 @@ private fun SetChip(
     }
 }
 
-/** Correcting a set that did not go to target. */
+/**
+ * Correcting a set that did not go to target, with the keyboard.
+ *
+ * The two fields are whatever the movement is counted in, exactly as the dial's
+ * two turns are. A cardio set asked for reps here would be a way to write a rep
+ * count onto a treadmill that the rest of the app has agreed does not have one.
+ */
 @Composable
 private fun EditSetDialog(
     set: LoggedSet,
     units: UnitSystem,
+    exercise: Exercise?,
     onDismiss: () -> Unit,
     onSave: (LoggedSet) -> Unit,
 ) {
-    var reps by remember { mutableStateOf(set.reps.toString()) }
-    var weight by remember {
+    val cardio = exercise?.measure == Measure.CARDIO
+
+    var primary by remember {
         mutableStateOf(
-            set.weightKg.takeIf { it > 0 }?.let { units.fromKg(it).asDisplayWeight() } ?: ""
+            if (cardio) {
+                set.seconds?.takeIf { it > 0 }?.let { (it / 60.0).asDisplayAmount() } ?: ""
+            } else {
+                set.reps.toString()
+            }
+        )
+    }
+    var secondary by remember {
+        mutableStateOf(
+            if (cardio) {
+                set.metres?.takeIf { it > 0 }
+                    ?.let { units.fromMetres(it).asDisplayAmount() }
+                    ?: ""
+            } else {
+                set.weightKg.takeIf { it > 0 }?.let { units.fromKg(it).asDisplayWeight() } ?: ""
+            }
         )
     }
 
@@ -460,19 +545,29 @@ private fun EditSetDialog(
         text = {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
-                    value = reps,
-                    onValueChange = { reps = it.filter(Char::isDigit).take(3) },
-                    label = { Text("Reps") },
+                    value = primary,
+                    onValueChange = { typed ->
+                        primary = if (cardio) {
+                            typed.filter { it.isDigit() || it == '.' }.take(5)
+                        } else {
+                            typed.filter(Char::isDigit).take(3)
+                        }
+                    },
+                    label = { Text(if (cardio) "Minutes" else "Reps") },
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = if (cardio) KeyboardType.Decimal else KeyboardType.Number,
+                    ),
                     modifier = Modifier.weight(1f),
                 )
                 OutlinedTextField(
-                    value = weight,
+                    value = secondary,
                     onValueChange = {
-                        weight = it.filter { c -> c.isDigit() || c == '.' }.take(6)
+                        secondary = it.filter { c -> c.isDigit() || c == '.' }.take(6)
                     },
-                    label = { Text(units.weightSuffix) },
+                    label = {
+                        Text(if (cardio) units.distanceSuffix else units.weightSuffix)
+                    },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.weight(1f),
@@ -481,16 +576,28 @@ private fun EditSetDialog(
         },
         confirmButton = {
             TextButton(onClick = {
+                // A blank or unparseable field keeps what was there, rather
+                // than silently zeroing a set that was done.
                 onSave(
-                    set.copy(
-                        // A blank or unparseable field keeps what was there,
-                        // rather than silently zeroing a set that was done.
-                        reps = reps.toIntOrNull()?.coerceIn(0, 500) ?: set.reps,
-                        weightKg = weight.toDoubleOrNull()
-                            ?.let { units.toKg(it) }
-                            ?: set.weightKg,
-                        completed = true,
-                    )
+                    if (cardio) {
+                        set.copy(
+                            seconds = primary.toDoubleOrNull()
+                                ?.let { (it * 60).roundToInt().coerceAtLeast(0) }
+                                ?: set.seconds,
+                            metres = secondary.toDoubleOrNull()
+                                ?.let { units.toMetres(it).coerceAtLeast(0) }
+                                ?: set.metres,
+                            completed = true,
+                        )
+                    } else {
+                        set.copy(
+                            reps = primary.toIntOrNull()?.coerceIn(0, 500) ?: set.reps,
+                            weightKg = secondary.toDoubleOrNull()
+                                ?.let { units.toKg(it) }
+                                ?: set.weightKg,
+                            completed = true,
+                        )
+                    }
                 )
             }) { Text("Save as done") }
         },

@@ -152,6 +152,89 @@ class WorkoutMathTest {
         assertNull(bestOneRepMax(emptyList()))
     }
 
+    // -- Cardio is not counted in reps ----------------------------------------
+
+    @Test
+    fun `every movement in the cardio group is counted in minutes, not reps`() {
+        // The two are separate ideas — one says what a movement trains, the
+        // other how it is counted — and this is what notices if a cardio
+        // machine is ever added without saying how to log it.
+        ExerciseCatalog.inGroup(MuscleGroup.CARDIO).forEach { exercise ->
+            assertEquals(
+                "${exercise.name} would be logged in reps",
+                Measure.CARDIO,
+                exercise.measure,
+            )
+        }
+        assertTrue(ExerciseCatalog.inGroup(MuscleGroup.CARDIO).isNotEmpty())
+    }
+
+    @Test
+    fun `a lift is still counted in reps`() {
+        assertEquals(Measure.LIFT, ExerciseCatalog.byId("back-squat")!!.measure)
+        assertEquals("a bodyweight lift is still a lift", Measure.LIFT, ExerciseCatalog.byId("pull-up")!!.measure)
+    }
+
+    @Test
+    fun `cardio contributes no tonnage, whatever is in its rep field`() {
+        // The guard is the measure and not the load: a cardio set carrying a
+        // stray rep count from anywhere must not be multiplied into a total.
+        val session = listOf(
+            logged("treadmill", LoggedSet(reps = 30, weightKg = 80.0, seconds = 1800, metres = 5000))
+        )
+        assertEquals(0.0, volumeKg(session, catalog), 0.001)
+    }
+
+    @Test
+    fun `cardio time and distance are totalled apart from tonnage`() {
+        val session = listOf(
+            logged("back-squat", LoggedSet(reps = 5, weightKg = 100.0)),
+            logged(
+                "treadmill",
+                LoggedSet(reps = 0, seconds = 1200, metres = 4000),
+                LoggedSet(reps = 0, seconds = 600, metres = 2000),
+            ),
+        )
+        assertEquals("the squats are still tonnage", 500.0, volumeKg(session, catalog), 0.001)
+        assertEquals(1800, cardioSeconds(session, catalog))
+        assertEquals(6000, cardioMetres(session, catalog))
+    }
+
+    @Test
+    fun `an abandoned interval counts for no time and no distance`() {
+        val session = listOf(
+            logged(
+                "cycling",
+                LoggedSet(reps = 0, seconds = 1200, metres = 8000),
+                LoggedSet(reps = 0, seconds = 300, metres = 2000, completed = false),
+            )
+        )
+        assertEquals(1200, cardioSeconds(session, catalog))
+        assertEquals(8000, cardioMetres(session, catalog))
+    }
+
+    @Test
+    fun `a lift contributes no cardio time, even if something wrote seconds on it`() {
+        val session = listOf(logged("bench-press", LoggedSet(reps = 5, weightKg = 60.0, seconds = 90)))
+        assertEquals(0, cardioSeconds(session, catalog))
+        assertEquals(0, cardioMetres(session, catalog))
+    }
+
+    @Test
+    fun `cardio has no one-rep max to estimate`() {
+        // Falls out of the load being zero rather than being special-cased,
+        // but it is the answer that matters: there is no such thing as a
+        // one-rep max on a rowing machine.
+        assertNull(bestOneRepMax(listOf(LoggedSet(reps = 0, seconds = 1200, metres = 5000))))
+    }
+
+    @Test
+    fun `a session of nothing but cardio still counts its sets`() {
+        val session = listOf(logged("row-erg", LoggedSet(reps = 0, seconds = 1200, metres = 5000)))
+        assertEquals(1, completedSets(session))
+        assertEquals(0.0, volumeKg(session, catalog), 0.001)
+    }
+
     // -- Seeding a movement added mid-session ---------------------------------
 
     private fun session(id: String, vararg exercises: LoggedExercise) =
