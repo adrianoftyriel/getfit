@@ -27,34 +27,47 @@ than replacing it. Those four things — applicationId, label, accent colour, an
 the `getfit://meal-dev` deep-link host — all hang off `isDevBuild` in
 `app/build.gradle.kts` and have to move together.
 
-## Nothing a session does triggers CI. Dispatch it explicitly.
+## A push to dev *does* trigger CI here
 
-GitHub creates **no workflow run** for anything this sandbox does — pushing a
-branch, opening a pull request, or merging one. It all goes through the same
-integration, and GitHub suppresses event-triggered runs from it. A pull request
-will say it was opened by the repo owner; that is only how the UI attributes it,
-and it does not change the suppression.
+ProLibertateGames documents the opposite — that GitHub suppresses every
+event-triggered run from the sandbox credential, so nothing a session does
+builds anything. **That is not true of this repository.** Measured on the first
+push, 2026-08-14:
 
-This was measured on ProLibertateGames, not on this repo, and the sandbox
-credential is the same one — so expect the same behaviour here and check the
-first time it matters. `workflow_dispatch` is the way round it, because it
-creates a run directly instead of relying on an event.
+| Action | Result |
+| --- | --- |
+| Session pushes `dev` (`8055524`) | **runs**, and published `v0.1.1-dev` |
+| Session pushes `main` (`8055524`) | **runs**, and published `v0.1.1` |
+| Session pushes a feature branch | no run — nothing listens for it |
+| Session calls `workflow_dispatch` on a feature branch | **runs**, publishes nothing |
+
+So a push to `dev` publishes a dev prerelease on its own, and a push to `main`
+publishes a production release on its own, with no dispatch needed. **Treat
+every push to a long-lived branch as a release action, and confirm before one
+to `main`.** If a push ever silently fails to produce a run, fall back to
+dispatching — `workflow_dispatch` creates a run directly.
+
+The same first push also confirmed the parts of the design that only a real
+release can exercise: both assets of `v0.1.1` carry an identical SHA-256, so the
+fixed-name `GetFit.apk` copy really is the versioned build; and
+`/releases/latest` returned `v0.1.1` rather than the newer `v0.1.1-dev`, which
+is the mechanism that keeps a production phone from ever being shown a dev
+build.
 
 ## The working loop
 
-1. Commit and push the feature branch.
+1. Commit and push the feature branch. This does not build: `ci.yml` only
+   listens for pushes to `dev`.
 2. Dispatch `ci.yml` **on that branch**. Wait for green.
-3. Open the PR through the API and merge it there, so the change is reviewable
-   and the merge commit is honest. Neither step builds anything.
-4. Dispatch the target branch's workflow to actually build and publish:
-   `ci.yml` on `dev`, `release.yml` on `main`.
+3. Open the PR through the API and merge it.
+4. Confirm the merge produced a run on the target branch. If it did not,
+   dispatch: `ci.yml` on `dev`, `release.yml` on `main`.
 
 Step 2 works because `ci.yml` builds, tests and lints on any ref, while its
 staging and publishing steps are gated on `github.ref == 'refs/heads/dev'`.
 Dispatching it on a feature branch is therefore the full check and publishes
-nothing.
-
-Skipping step 4 leaves a branch whose head was never built, and no release.
+nothing. It is the real review gate, and — see below — very nearly the only
+verification that exists.
 
 ## Gradle does not run in the sandbox
 
@@ -129,8 +142,10 @@ install with it. Bump that variable by hand. The hook is written not to matter
 when it fails: with rtk absent the rewrite no-ops and the only cost is verbose
 output.
 
-## A permanent fix for the CI suppression, if you want one
+## If runs ever stop appearing
 
-It is a property of the sandbox's credential, so it cannot be fixed from inside
-a session. Giving the environment a personal access token to push with would
-make pushes and PRs behave normally. Until then, dispatching is the workaround.
+On ProLibertateGames they never appear at all, and the cause is that sandbox's
+credential rather than anything in the repository — it cannot be fixed from
+inside a session, and dispatching is the workaround there. Nothing of the sort
+has been seen here, but if a push to `dev` stops producing a run, that is the
+first thing to suspect rather than a broken workflow file.
