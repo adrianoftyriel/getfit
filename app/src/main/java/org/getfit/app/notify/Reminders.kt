@@ -1,5 +1,6 @@
 package org.getfit.app.notify
 
+import android.Manifest
 import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -7,9 +8,11 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -89,14 +92,32 @@ object Reminders {
     }
 
     /**
+     * Whether a notification can actually be posted.
+     *
+     * Asked before posting rather than discovered by catching the
+     * SecurityException afterwards. Both avoid the crash; only this one is
+     * honest about the case, and it is the form Android's own lint recognises
+     * as handling the permission — a `runCatching` around the call reads to it,
+     * correctly, as not having checked.
+     */
+    fun canPost(context: Context): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) == PackageManager.PERMISSION_GRANTED
+
+    /**
      * Posts the reminder.
      *
      * Silently does nothing when notifications are not permitted. From API 33
      * the user may simply have said no, and that is an answer to respect rather
      * than an error to report — there is nowhere to report it to from a
-     * broadcast receiver anyway.
+     * broadcast receiver anyway. The settings screen is where it is said, since
+     * that is where somebody can do something about it.
      */
     fun notifyNow(context: Context) {
+        if (!canPost(context)) return
         ensureChannel(context)
 
         val open = PendingIntent.getActivity(
