@@ -44,14 +44,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import org.getfit.app.settings.UnitSystem
 import org.getfit.app.settings.fromKg
+import org.getfit.app.settings.fromMetres
 import org.getfit.app.settings.toKg
+import org.getfit.app.settings.toMetres
 import org.getfit.app.workout.DialState
+import org.getfit.app.workout.Exercise
 import org.getfit.app.workout.KG_DIAL
+import org.getfit.app.workout.KM_DIAL
 import org.getfit.app.workout.LB_DIAL
 import org.getfit.app.workout.LoggedSet
+import org.getfit.app.workout.MILE_DIAL
+import org.getfit.app.workout.MINUTE_DIAL
+import org.getfit.app.workout.Measure
 import org.getfit.app.workout.REP_DIAL
 import org.getfit.app.workout.angleDelta
-import org.getfit.app.workout.asDisplayWeight
+import org.getfit.app.workout.asDisplayAmount
 import org.getfit.app.workout.asReps
 import org.getfit.app.workout.dialAngle
 import org.getfit.app.workout.dialAt
@@ -59,6 +66,7 @@ import org.getfit.app.workout.turnedBy
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
@@ -71,8 +79,10 @@ import kotlin.math.sin
  * never a keyboard away. Every detent is a haptic tick, so the count can be
  * felt as well as read.
  *
- * Weight gets the same ring when the movement has a load, on a second turn of
- * the same control, so nothing about logging a set involves typing.
+ * The ring turns two numbers, and which two depends on the movement: reps then
+ * load for a lift, minutes then distance for cardio. A treadmill has no rep
+ * count, so it is not asked for one. Either way it is the same control and the
+ * same two taps, and nothing about logging a set involves typing.
  *
  * The arithmetic — what a turn is worth, where a touch is on the ring, and what
  * happens at the seam at twelve o'clock — is all in [DialState] and its
@@ -84,37 +94,88 @@ fun SetDialDialog(
     exerciseName: String,
     setNumber: Int,
     set: LoggedSet,
-    bodyweight: Boolean,
+    exercise: Exercise?,
     units: UnitSystem,
     /** Offered only on a set already logged, as the way to take it back. */
     onNotDone: (() -> Unit)?,
     onDismiss: () -> Unit,
     onLog: (LoggedSet) -> Unit,
 ) {
-    val loadSpec = if (units == UnitSystem.IMPERIAL) LB_DIAL else KG_DIAL
-    var reps by remember { mutableStateOf(dialAt(REP_DIAL, set.reps.toDouble())) }
-    var load by remember { mutableStateOf(dialAt(loadSpec, units.fromKg(set.weightKg))) }
-    var addingLoad by remember { mutableStateOf(false) }
-    var onLoadStep by remember { mutableStateOf(false) }
+    val cardio = exercise?.measure == Measure.CARDIO
+    val bodyweight = exercise?.bodyweight == true
 
-    // Whether there is a load worth dialling. A pull-up has none unless weight
-    // has been hung off it, and asking for a second turn of the ring to confirm
-    // a zero every time would be a tap charged on every set for the rare one.
-    val loaded = !bodyweight || set.weightKg > 0.0 || addingLoad
+    // Two numbers either way, on the same ring, in the same two taps: reps then
+    // load for a lift, minutes then distance for cardio. The movement decides
+    // which pair it is, and nothing below has to ask twice.
+    val primarySpec = if (cardio) MINUTE_DIAL else REP_DIAL
+    val secondarySpec = when {
+        cardio -> if (units == UnitSystem.IMPERIAL) MILE_DIAL else KM_DIAL
+        units == UnitSystem.IMPERIAL -> LB_DIAL
+        else -> KG_DIAL
+    }
+
+    var primary by remember {
+        mutableStateOf(
+            dialAt(
+                primarySpec,
+                if (cardio) (set.seconds ?: 0) / SECONDS_PER_MINUTE else set.reps.toDouble(),
+            )
+        )
+    }
+    var secondary by remember {
+        mutableStateOf(
+            dialAt(
+                secondarySpec,
+                if (cardio) units.fromMetres(set.metres ?: 0) else units.fromKg(set.weightKg),
+            )
+        )
+    }
+    var addingSecond by remember { mutableStateOf(false) }
+    var onSecondStep by remember { mutableStateOf(false) }
+
+    // Whether there is a second number worth dialling at all. A pull-up has no
+    // load unless weight has been hung off it; a twenty-minute bike ride often
+    // has no distance worth recording. Charging every set a tap to confirm a
+    // zero, for the sake of the set that needs it, is the thing to avoid in
+    // both cases — so it is offered as a button instead.
+    val hasSecond = when {
+        cardio -> (set.metres ?: 0) > 0 || addingSecond
+        else -> !bodyweight || set.weightKg > 0.0 || addingSecond
+    }
 
     val commit: () -> Unit = {
-        if (!onLoadStep && loaded) {
-            onLoadStep = true
+        if (!onSecondStep && hasSecond) {
+            onSecondStep = true
         } else {
+            // A dial nobody turned leaves its number exactly as it was, rather
+            // than snapping a figure that came from the keyboard onto the
+            // nearest detent behind their back.
             onLog(
-                set.copy(
-                    reps = reps.asReps(),
-                    // A dial nobody turned leaves the weight exactly as it was,
-                    // rather than snapping a figure typed through the keyboard
-                    // onto the nearest detent behind their back.
-                    weightKg = if (load.turned) units.toKg(load.value) else set.weightKg,
-                    completed = true,
-                )
+                if (cardio) {
+                    set.copy(
+                        seconds = if (primary.turned) {
+                            (primary.value * SECONDS_PER_MINUTE).roundToInt()
+                        } else {
+                            set.seconds
+                        },
+                        metres = if (secondary.turned) {
+                            units.toMetres(secondary.value)
+                        } else {
+                            set.metres
+                        },
+                        completed = true,
+                    )
+                } else {
+                    set.copy(
+                        reps = primary.asReps(),
+                        weightKg = if (secondary.turned) {
+                            units.toKg(secondary.value)
+                        } else {
+                            set.weightKg
+                        },
+                        completed = true,
+                    )
+                }
             )
         }
     }
@@ -133,7 +194,9 @@ fun SetDialDialog(
                 )
                 Text(
                     "Set $setNumber · " + when {
-                        !onLoadStep -> "Reps"
+                        !onSecondStep && cardio -> "Minutes"
+                        !onSecondStep -> "Reps"
+                        cardio -> "Distance"
                         bodyweight -> "Added weight"
                         else -> "Weight"
                     },
@@ -143,19 +206,28 @@ fun SetDialDialog(
                 Spacer(Modifier.height(12.dp))
 
                 Dial(
-                    state = if (onLoadStep) load else reps,
-                    valueText = if (onLoadStep) {
-                        load.value.asDisplayWeight()
-                    } else {
-                        reps.asReps().toString()
+                    state = if (onSecondStep) secondary else primary,
+                    valueText = when {
+                        onSecondStep -> secondary.value.asDisplayAmount()
+                        cardio -> primary.value.asDisplayAmount()
+                        else -> primary.asReps().toString()
                     },
-                    unitText = if (onLoadStep) units.weightSuffix else "reps",
-                    action = if (!onLoadStep && loaded) "Tap for weight" else "Tap to log",
+                    unitText = when {
+                        !onSecondStep && cardio -> "min"
+                        !onSecondStep -> "reps"
+                        cardio -> units.distanceSuffix
+                        else -> units.weightSuffix
+                    },
+                    action = when {
+                        onSecondStep || !hasSecond -> "Tap to log"
+                        cardio -> "Tap for distance"
+                        else -> "Tap for weight"
+                    },
                     onTurn = { degrees ->
-                        if (onLoadStep) {
-                            load = load.turnedBy(degrees)
+                        if (onSecondStep) {
+                            secondary = secondary.turnedBy(degrees)
                         } else {
-                            reps = reps.turnedBy(degrees)
+                            primary = primary.turnedBy(degrees)
                         }
                     },
                     onCommit = commit,
@@ -171,15 +243,25 @@ fun SetDialDialog(
                     TextButton(onClick = onDismiss) { Text("Cancel") }
                     Row {
                         when {
-                            onLoadStep ->
-                                TextButton(onClick = { onLoadStep = false }) { Text("Reps") }
-                            bodyweight && !loaded ->
-                                TextButton(onClick = {
-                                    addingLoad = true
-                                    onLoadStep = true
-                                }) { Text("Add weight") }
+                            onSecondStep -> TextButton(
+                                onClick = { onSecondStep = false },
+                            ) { Text(if (cardio) "Minutes" else "Reps") }
+
+                            cardio && !hasSecond -> TextButton(
+                                onClick = {
+                                    addingSecond = true
+                                    onSecondStep = true
+                                },
+                            ) { Text("Add distance") }
+
+                            bodyweight && !hasSecond -> TextButton(
+                                onClick = {
+                                    addingSecond = true
+                                    onSecondStep = true
+                                },
+                            ) { Text("Add weight") }
                         }
-                        if (onNotDone != null && !onLoadStep) {
+                        if (onNotDone != null && !onSecondStep) {
                             TextButton(onClick = onNotDone) { Text("Not done") }
                         }
                     }
@@ -188,6 +270,9 @@ fun SetDialDialog(
         }
     }
 }
+
+/** Minutes are the display unit; seconds are what gets stored. */
+private const val SECONDS_PER_MINUTE = 60.0
 
 /** The ring itself: a track to turn, and a hub to tap when the number is right. */
 @Composable

@@ -20,10 +20,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import org.getfit.app.workout.Exercise
 import org.getfit.app.workout.ExerciseCatalog
+import org.getfit.app.workout.Measure
 import org.getfit.app.workout.MuscleGroup
 
 /**
@@ -82,8 +85,22 @@ fun ExercisePicker(
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Text(exercise.name)
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(exercise.name, textAlign = TextAlign.Start)
+                                    // Said here rather than discovered at the
+                                    // dial: what a movement is counted in
+                                    // changes what picking it commits you to
+                                    // logging, and the odd one out is the one
+                                    // worth naming.
+                                    if (exercise.measure == Measure.CARDIO) {
+                                        Text(
+                                            "minutes and distance",
+                                            style = MaterialTheme.typography.labelSmall,
+                                        )
+                                    }
+                                }
                                 // Not disabled: the same movement twice in one
                                 // session is a real thing to do, so this says
                                 // "already in" rather than refusing.

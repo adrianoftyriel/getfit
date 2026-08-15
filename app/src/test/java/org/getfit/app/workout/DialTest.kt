@@ -132,6 +132,51 @@ class DialTest {
         assertEquals(62.5, dial.turnedBy(36f).value, 0.0001)
     }
 
+    // -- Minutes and distance --------------------------------------------------
+
+    @Test
+    fun `a full turn of the minute dial is ten minutes`() {
+        // The same rule as reps, deliberately: a twenty-minute row is two
+        // revolutions, exactly like twenty reps, so one thumb learns one dial.
+        assertEquals(10.0, MINUTE_DIAL.perTurn, 0.0001)
+        assertEquals(10.0, dialAt(MINUTE_DIAL, 0.0).turnedBy(360f).value, 0.0001)
+        assertEquals(20.0, dialAt(MINUTE_DIAL, 0.0).turnedBy(720f).value, 0.0001)
+        assertEquals("a minute a detent", 1.0, dialAt(MINUTE_DIAL, 0.0).turnedBy(36f).value, 0.0001)
+    }
+
+    @Test
+    fun `a full turn of the distance dial is one whole unit`() {
+        // A tenth to a detent, so the turns can be counted off against the
+        // number in the middle: three turns is three kilometres.
+        assertEquals(1.0, KM_DIAL.perTurn, 0.0001)
+        assertEquals(1.0, MILE_DIAL.perTurn, 0.0001)
+        assertEquals(5.0, dialAt(KM_DIAL, 0.0).turnedBy(360f * 5).value, 0.0001)
+        assertEquals(0.1, dialAt(KM_DIAL, 0.0).turnedBy(36f).value, 0.0001)
+    }
+
+    @Test
+    fun `a run opens where it was left and moves by a hundred metres`() {
+        val dial = dialAt(KM_DIAL, 5.0)
+        assertEquals(5, dial.turns)
+        assertEquals(5.1, dial.turnedBy(36f).value, 0.0001)
+        assertEquals(4.9, dial.turnedBy(-36f).value, 0.0001)
+    }
+
+    @Test
+    fun `the clock and the distance both stop at their ceilings`() {
+        assertEquals(180.0, dialAt(MINUTE_DIAL, 0.0).turnedBy(360f * 100).value, 0.0001)
+        assertEquals(50.0, dialAt(KM_DIAL, 0.0).turnedBy(360f * 200).value, 0.0001)
+        assertEquals(30.0, dialAt(MILE_DIAL, 0.0).turnedBy(360f * 200).value, 0.0001)
+    }
+
+    @Test
+    fun `both distance dials read the same way round`() {
+        // Switching units changes the unit under the thumb, not how the dial
+        // behaves: one revolution is one of whatever is on screen.
+        assertEquals(KM_DIAL.step, MILE_DIAL.step, 0.0001)
+        assertEquals(KM_DIAL.detentsPerTurn, MILE_DIAL.detentsPerTurn)
+    }
+
     // -- Drawing the ring ------------------------------------------------------
 
     @Test

@@ -26,7 +26,29 @@ data class Exercise(
      * column means added weight, so anything summing volume has to know.
      */
     val bodyweight: Boolean = false,
+    /** What a set of this is counted in. See [Measure]. */
+    val measure: Measure = Measure.LIFT,
 )
+
+/**
+ * What a set of a movement is measured in, and therefore how it is logged.
+ *
+ * A treadmill has no rep count. Recording twenty minutes of running as "1 rep"
+ * would file it in the same column as a set of five heavy squats, and every
+ * total built on that column would be quietly wrong — which is the reason this
+ * is a property of the movement rather than a convention the screens agree to
+ * follow.
+ *
+ * [CARDIO] is measured in time, with distance beside it when there is one to
+ * record. That mirrors [LIFT] exactly: a primary number, and a second one that
+ * is often but not always there — reps and load, minutes and kilometres.
+ *
+ * Deliberately separate from [MuscleGroup.CARDIO], which says what a movement
+ * trains rather than how it is counted. The two agree today and a test says so,
+ * but a loaded carry measured in metres would belong to a muscle group and
+ * still not be counted in reps.
+ */
+enum class Measure { LIFT, CARDIO }
 
 enum class MuscleGroup(val label: String) {
     CHEST("Chest"),
@@ -53,11 +75,22 @@ enum class Equipment(val label: String) {
 // Planning
 // ---------------------------------------------------------------------------
 
-/** A set as prescribed: how many reps at what load. */
+/**
+ * A set as prescribed: how many reps at what load, or how long and how far.
+ *
+ * Which pair means anything is decided by the movement's [Measure], not by
+ * which fields happen to be filled in. Both pairs exist on the one type because
+ * a plan is a list of sets whatever they are counted in, and splitting it would
+ * mean every screen that walks a plan had to walk two kinds of it.
+ */
 @Serializable
 data class PlannedSet(
     val reps: Int,
     val weightKg: Double = 0.0,
+    /** Time called for, on a movement measured in minutes. */
+    val seconds: Int? = null,
+    /** Distance called for, in metres. Null where none is asked for. */
+    val metres: Int? = null,
 )
 
 /** One exercise within a plan, and the sets called for. */
@@ -98,6 +131,20 @@ data class LoggedSet(
     val completed: Boolean = true,
     /** Reps in reserve, if recorded — how many were left in the tank. */
     val rir: Int? = null,
+    /**
+     * Time on the clock, for a movement measured in minutes rather than reps.
+     * Stored in seconds because that is what a stopwatch and a session's own
+     * duration are in; minutes are a display unit.
+     */
+    val seconds: Int? = null,
+    /**
+     * Distance covered, in metres — the base unit, for the same reason weights
+     * are stored in kilograms: what is shown depends on a setting, and a
+     * history that changed value when the setting was flipped would be worse
+     * than useless. Null when there is no distance to record, which is
+     * different from a distance of zero.
+     */
+    val metres: Int? = null,
 )
 
 @Serializable
@@ -142,12 +189,38 @@ data class WorkoutSession(
  */
 fun volumeKg(exercises: List<LoggedExercise>, catalog: (String) -> Exercise?): Double =
     exercises.sumOf { logged ->
-        val bodyweight = catalog(logged.exerciseId)?.bodyweight ?: false
+        val exercise = catalog(logged.exerciseId)
+        // Cardio contributes nothing and must not be reached for: its reps
+        // field is not a rep count, and multiplying it by anything would be
+        // arithmetic on two numbers that were never the same kind of thing.
+        if (exercise?.measure == Measure.CARDIO) return@sumOf 0.0
+        val bodyweight = exercise?.bodyweight ?: false
         logged.sets
             .filter { it.completed }
             .sumOf { set ->
                 if (bodyweight && set.weightKg <= 0.0) 0.0 else set.reps * set.weightKg
             }
+    }
+
+/**
+ * Time spent on movements measured in minutes, over the sets that were
+ * completed. Seconds, like everything else that stores a duration.
+ *
+ * Reported apart from tonnage rather than folded into it. There is no honest
+ * exchange rate between a kilometre and a kilogram, and inventing one to make a
+ * single "work done" number would make both halves unreadable.
+ */
+fun cardioSeconds(exercises: List<LoggedExercise>, catalog: (String) -> Exercise?): Int =
+    exercises.sumOf { logged ->
+        if (catalog(logged.exerciseId)?.measure != Measure.CARDIO) return@sumOf 0
+        logged.sets.filter { it.completed }.sumOf { it.seconds ?: 0 }
+    }
+
+/** Distance covered on movements measured in minutes, in metres. */
+fun cardioMetres(exercises: List<LoggedExercise>, catalog: (String) -> Exercise?): Int =
+    exercises.sumOf { logged ->
+        if (catalog(logged.exerciseId)?.measure != Measure.CARDIO) return@sumOf 0
+        logged.sets.filter { it.completed }.sumOf { it.metres ?: 0 }
     }
 
 /** Completed working sets, which is the count that matters for weekly volume. */
@@ -207,5 +280,10 @@ fun lastCompletedSet(sessions: List<WorkoutSession>, exerciseId: String): Logged
  * number to half the people who would see it, and it would also make this
  * function's own tests pass or fail on the runner's locale.
  */
-fun Double.asDisplayWeight(): String =
+fun Double.asDisplayWeight(): String = oneDecimalAtMost()
+
+/** The same rounding for distances and minutes: 5 km, 5.4 km, 12.5 min. */
+fun Double.asDisplayAmount(): String = oneDecimalAtMost()
+
+private fun Double.oneDecimalAtMost(): String =
     if (this % 1.0 == 0.0) "${roundToInt()}" else String.format(Locale.US, "%.1f", this)

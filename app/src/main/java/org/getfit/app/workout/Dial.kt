@@ -63,6 +63,28 @@ val REP_DIAL = DialSpec(step = 1.0, detentsPerTurn = 10, min = 0.0, max = 100.0)
 val KG_DIAL = DialSpec(step = 2.5, detentsPerTurn = 10, min = 0.0, max = 300.0)
 val LB_DIAL = DialSpec(step = 5.0, detentsPerTurn = 10, min = 0.0, max = 660.0)
 
+/**
+ * Minutes, for movements counted on a clock rather than in reps. A minute to a
+ * detent and ten to a turn, so the dial reads the same way as the rep dial does
+ * — a twenty-minute row is two revolutions, the same as twenty reps.
+ *
+ * Three hours is the ceiling. Past that somebody is logging an event rather
+ * than a session, and no thumb should have to travel that far anyway: the dial
+ * opens on last time's numbers, so the ordinary move is a nudge.
+ */
+val MINUTE_DIAL = DialSpec(step = 1.0, detentsPerTurn = 10, min = 0.0, max = 180.0)
+
+/**
+ * Distance, in whichever unit is on screen. A tenth to a detent, so one whole
+ * revolution is one kilometre or one mile and the turns can be counted off
+ * against the number in the middle.
+ *
+ * A hundred metres is the finest anybody reads off a treadmill, and the
+ * ceilings are past a marathon in both units without being absurd.
+ */
+val KM_DIAL = DialSpec(step = 0.1, detentsPerTurn = 10, min = 0.0, max = 50.0)
+val MILE_DIAL = DialSpec(step = 0.1, detentsPerTurn = 10, min = 0.0, max = 30.0)
+
 /** Where a value sits on the dial: how far round from [DialSpec.min] it is. */
 fun DialSpec.sweepFor(value: Double): Double =
     ((value - min) / perTurn * DEGREES_PER_TURN).coerceIn(0.0, maxSweep)

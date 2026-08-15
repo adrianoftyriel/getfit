@@ -16,33 +16,8 @@ import java.util.Calendar
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
-/**
- * Which units weights are shown in.
- *
- * **Storage is always kilograms.** Every weight in the model, every total, and
- * every stored plan is metric; this converts at the edge, on the way to a field
- * and back off it. Storing whatever the user last had selected would mean a
- * training history that changed value when the setting was flipped.
- */
-enum class UnitSystem(val label: String, val weightSuffix: String) {
-    METRIC("Metric", "kg"),
-    IMPERIAL("Imperial", "lb"),
-}
-
-/** Exactly, by definition of the international pound. */
-const val KG_PER_LB = 0.45359237
-
-/** Kilograms out of storage, into whatever is being shown. */
-fun UnitSystem.fromKg(kg: Double): Double = when (this) {
-    UnitSystem.METRIC -> kg
-    UnitSystem.IMPERIAL -> kg / KG_PER_LB
-}
-
-/** Whatever was typed, back into the kilograms everything is stored in. */
-fun UnitSystem.toKg(value: Double): Double = when (this) {
-    UnitSystem.METRIC -> value
-    UnitSystem.IMPERIAL -> value * KG_PER_LB
-}
+// [UnitSystem] and the conversions live in Units.kt, which has no Android in it
+// so the unit tests can reach them.
 
 data class Settings(
     val checkForUpdatesOnLaunch: Boolean = true,

@@ -96,7 +96,16 @@ class WorkoutRepository(context: Context) {
                     LoggedExercise(
                         exerciseId = planned.exerciseId,
                         sets = planned.sets.map { set ->
-                            LoggedSet(reps = set.reps, weightKg = set.weightKg, completed = false)
+                            LoggedSet(
+                                reps = set.reps,
+                                weightKg = set.weightKg,
+                                // Carried across whatever the movement is
+                                // counted in: a planned twenty minutes has to
+                                // arrive as twenty minutes, not as nothing.
+                                seconds = set.seconds,
+                                metres = set.metres,
+                                completed = false,
+                            )
                         },
                     )
                 },

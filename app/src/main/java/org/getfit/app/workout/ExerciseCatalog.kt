@@ -48,10 +48,21 @@ object ExerciseCatalog {
         Exercise("hanging-leg-raise", "Hanging leg raise", MuscleGroup.CORE, Equipment.BODYWEIGHT, bodyweight = true),
         Exercise("cable-crunch", "Cable crunch", MuscleGroup.CORE, Equipment.CABLE),
 
-        // Cardio
-        Exercise("row-erg", "Rowing machine", MuscleGroup.CARDIO, Equipment.MACHINE, bodyweight = true),
-        Exercise("treadmill", "Treadmill", MuscleGroup.CARDIO, Equipment.MACHINE, bodyweight = true),
-        Exercise("cycling", "Cycling", MuscleGroup.CARDIO, Equipment.MACHINE, bodyweight = true),
+        // Cardio. Counted in minutes and distance rather than reps — see
+        // [Measure]. Still marked bodyweight, which stays true of them and
+        // keeps the flag meaning one thing.
+        Exercise(
+            "row-erg", "Rowing machine", MuscleGroup.CARDIO, Equipment.MACHINE,
+            bodyweight = true, measure = Measure.CARDIO,
+        ),
+        Exercise(
+            "treadmill", "Treadmill", MuscleGroup.CARDIO, Equipment.MACHINE,
+            bodyweight = true, measure = Measure.CARDIO,
+        ),
+        Exercise(
+            "cycling", "Cycling", MuscleGroup.CARDIO, Equipment.MACHINE,
+            bodyweight = true, measure = Measure.CARDIO,
+        ),
     )
 
     // Named apart from the function below rather than shadowing it. Kotlin would
