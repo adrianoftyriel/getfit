@@ -51,6 +51,7 @@ import org.getfit.app.workout.LoggedSet
 import org.getfit.app.workout.WorkoutSession
 import org.getfit.app.workout.asDisplayWeight
 import org.getfit.app.workout.completedSets
+import org.getfit.app.workout.lastCompletedSet
 import org.getfit.app.workout.volumeKg
 
 /**
@@ -75,9 +76,14 @@ import org.getfit.app.workout.volumeKg
 fun SessionScreen(env: AppEnv, onBack: () -> Unit, onShowDemo: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     val session by env.workouts.activeSession.collectAsState(initial = null)
+    // Every session, this one included, only to seed an added movement from the
+    // last time it was done. Read here rather than in the picker so the picker
+    // stays a list of exercises and nothing else.
+    val history by env.workouts.sessions.collectAsState(initial = emptyList())
     var units by remember { mutableStateOf(UnitSystem.METRIC) }
     var editing by remember { mutableStateOf<SetAddress?>(null) }
     var dialling by remember { mutableStateOf<DialTarget?>(null) }
+    var picking by remember { mutableStateOf(false) }
     var confirmFinish by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -180,6 +186,32 @@ fun SessionScreen(env: AppEnv, onBack: () -> Unit, onShowDemo: (String) -> Unit)
         }
     }
 
+    if (picking) {
+        ExercisePicker(
+            alreadyIn = current.exercises.map { it.exerciseId }.toSet(),
+            onPick = { exercise ->
+                scope.launch {
+                    // One set, marked not done, seeded from the last time this
+                    // movement was completed — so its dial opens where it was
+                    // left rather than at zero. Not done, because adding an
+                    // exercise is saying what is about to happen, not what has.
+                    val seed = lastCompletedSet(history, exercise.id)
+                        ?: LoggedSet(reps = 8, weightKg = 0.0)
+                    env.workouts.updateSession(
+                        current.copy(
+                            exercises = current.exercises + LoggedExercise(
+                                exerciseId = exercise.id,
+                                sets = listOf(seed.copy(completed = false, rir = null)),
+                            ),
+                        )
+                    )
+                    picking = false
+                }
+            },
+            onDismiss = { picking = false },
+        )
+    }
+
     if (confirmFinish) {
         val done = completedSets(current.exercises)
         val total = current.exercises.sumOf { it.sets.size }
@@ -240,6 +272,26 @@ fun SessionScreen(env: AppEnv, onBack: () -> Unit, onShowDemo: (String) -> Unit)
                         onShowDemo = { onShowDemo(logged.exerciseId) },
                     )
                 }
+            }
+
+            if (current.exercises.isEmpty()) {
+                item {
+                    Text(
+                        "Nothing in this session yet. Add the first movement and " +
+                            "log it as you go.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+
+            // Below the exercises rather than in the top bar: a session that
+            // came from a plan is mostly scrolled through, and the movement
+            // being added is being added to the end of it.
+            item {
+                OutlinedButton(
+                    onClick = { picking = true },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Add an exercise") }
             }
 
             item { Spacer(Modifier.height(32.dp)) }
