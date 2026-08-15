@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import org.getfit.app.nutrition.Nutrition
 import org.getfit.app.nutrition.dayKey
+import org.getfit.app.progress.progressComparison
 import org.getfit.app.settings.Settings
 import org.getfit.app.workout.ExerciseCatalog
 import org.getfit.app.workout.WorkoutSession
@@ -56,8 +57,10 @@ fun TodayScreen(
     val active by env.workouts.activeSession.collectAsState(initial = null)
     val sessions by env.workouts.sessions.collectAsState(initial = emptyList())
     val meals by env.nutrition.meals.collectAsState(initial = emptyList())
+    val progressEntries by env.progress.entries.collectAsState(initial = emptyList())
 
-    val today = dayKey(System.currentTimeMillis() / 1000)
+    val now = System.currentTimeMillis() / 1000
+    val today = dayKey(now)
     val todaysMeals = meals.filter { dayKey(it.capturedAt) == today }
     val eaten = todaysMeals.fold(Nutrition.ZERO) { sum, meal -> sum + meal.totals }
 
@@ -112,6 +115,22 @@ fun TodayScreen(
                         ) { Text("Train without a plan") }
                     }
                 }
+            }
+        }
+
+        // Turns up unasked, on a day nobody went looking for it, and only when
+        // there are two photographs far enough apart to mean something. Which
+        // "before" it uses rotates by the day, so it is a different pair this
+        // week from last rather than an image that stops being looked at.
+        val comparison = progressComparison(progressEntries, now)
+        if (comparison != null) {
+            item {
+                ComparisonCard(
+                    photos = env.progress.photos,
+                    comparison = comparison,
+                    units = settings.units,
+                    title = "How far you have come",
+                )
             }
         }
 

@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -27,6 +28,7 @@ import org.getfit.app.demo.DemoRepository
 import org.getfit.app.nutrition.MealEntry
 import org.getfit.app.nutrition.MealInbox
 import org.getfit.app.nutrition.NutritionRepository
+import org.getfit.app.progress.ProgressRepository
 import org.getfit.app.settings.Settings
 import org.getfit.app.settings.SettingsRepository
 import org.getfit.app.update.Updater
@@ -37,21 +39,24 @@ class AppEnv(
     val settingsRepository: SettingsRepository,
     val workouts: WorkoutRepository,
     val nutrition: NutritionRepository,
+    val progress: ProgressRepository,
     val demos: DemoRepository,
     val inbox: MealInbox,
     val updater: Updater,
 )
 
 /**
- * The four places the app has.
+ * The five places the app has.
  *
  * A bottom bar rather than a navigation graph: these are peers, all reachable
- * at all times, and none of them takes an argument.
+ * at all times, and none of them takes an argument. Five is the most a bar of
+ * these should carry, so anything after this belongs inside one of them.
  */
 enum class Tab(val label: String, val icon: ImageVector) {
     TODAY("Today", Icons.Filled.Home),
     PLANS("Plans", Icons.Filled.List),
     FOOD("Food", Icons.Filled.DateRange),
+    PROGRESS("Progress", Icons.Filled.Person),
     SETTINGS("Settings", Icons.Filled.Settings),
 }
 
@@ -163,6 +168,8 @@ private fun Tabs(
                     pendingMeal = pendingMeal,
                     onMealHandled = onMealHandled,
                 )
+
+                Tab.PROGRESS -> ProgressScreen(env = env, settings = settings)
 
                 Tab.SETTINGS -> SettingsScreen(env, settings)
             }
