@@ -7,6 +7,15 @@
     <!-- Lets the app hand a downloaded APK to the system installer. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- Workout reminders. POST_NOTIFICATIONS is asked for at runtime from API
+         33; below that, being installed is consent enough and the system
+         ignores it. RECEIVE_BOOT_COMPLETED is what lets a reminder survive a
+         restart: Android drops every alarm on reboot, so without it a schedule
+         set once would work until the phone was next turned off and then stop
+         without appearing to. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -52,6 +61,24 @@
                 <data android:scheme="getfit" android:host="${deepLinkHost}" />
             </intent-filter>
         </activity>
+
+        <!-- Fires a reminder and arms the next one. Not exported: only this
+             app's own alarm ever sends it. -->
+        <receiver
+            android:name=".notify.ReminderReceiver"
+            android:exported="false" />
+
+        <!-- Re-arms the alarm after a reboot, and after the app is updated —
+             which an OTA install is, so a reminder must not be lost by taking
+             the update that was meant to improve things. -->
+        <receiver
+            android:name=".notify.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <!-- Serves the downloaded APK to the package installer via a content URI. -->
         <provider

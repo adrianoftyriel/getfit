@@ -102,6 +102,34 @@ through a temp file and a rename. It is not a database because there is nothing
 here worth querying, and it is behind flows and suspend functions so it can
 become one later without a screen noticing.
 
+## The app writes no form guidance of its own
+
+Everything on the exercise demonstration screen — the photographs and every
+numbered instruction — is fetched verbatim from an outside dataset and shown
+with its source named on the same screen. **Do not add form cues, coaching
+notes, or "tips" written by a model.** Bad advice about how to move a loaded
+barbell injures people, and text that sits beside a real citation inherits its
+authority whether or not it earned it.
+
+`demo/ExerciseDemo.kt` enforces the weaker half of this in the type: a
+demonstration cannot be constructed without an `Attribution`. The stronger half
+— that nobody writes instructions by hand — is a rule, and the test
+`the stated provenance does not claim clinical review` is what notices if the
+description of the source ever quietly becomes an endorsement.
+
+The source is [free-exercise-db](https://github.com/yuhonas/free-exercise-db),
+which declares the Unlicense. Its provenance is worth knowing before leaning on
+it: it re-packages `wrkout/exercises.json`, which is compiled from a commercial
+fitness site's library and ships no licence file of its own. It is a real,
+citable, widely used dataset and it is not a clinical body. That is why the
+imagery is **fetched at runtime and cached, never bundled into the APK**, and
+why the screen states plainly that it is not clinically reviewed.
+
+`demo/DemoCatalog.kt` maps our exercise ids to theirs, written out by hand and
+checked one at a time. Never generate that mapping by matching names: it is how
+`dip` becomes `Jerk_Dip_Squat` and somebody is shown the wrong movement. An
+exercise with no mapping shows "no demonstration", which is the correct outcome.
+
 ## Meals reach the phone by two routes
 
 The `meal-photo` skill in `.claude/skills/` estimates a meal from a photograph

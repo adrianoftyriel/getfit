@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The status bar icon.
+
+  Solid white on transparent, and nothing else. Android takes the alpha channel
+  of a notification icon and throws the colours away, so anything with a
+  coloured ground arrives as a filled white blob — which is why this is not the
+  launcher icon at a smaller size.
+
+  24dp viewport, the standard for status bar icons, with the mark inset to leave
+  the 2dp of padding the system expects.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+
+    <!-- Bar -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M7.5,11h9v2h-9z" />
+    <!-- Inner plates -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M5.5,8h2v8h-2z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M16.5,8h2v8h-2z" />
+    <!-- Outer plates -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M3,9.5h1.5v5h-1.5z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M19.5,9.5h1.5v5h-1.5z" />
+</vector>
