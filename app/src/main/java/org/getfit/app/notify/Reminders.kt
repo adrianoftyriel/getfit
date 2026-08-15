@@ -1,6 +1,7 @@
 package org.getfit.app.notify
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -115,7 +116,17 @@ object Reminders {
      * than an error to report — there is nowhere to report it to from a
      * broadcast receiver anyway. The settings screen is where it is said, since
      * that is where somebody can do something about it.
+     *
+     * The suppression on the call below covers a genuine false positive rather
+     * than an unchecked call. [canPost] does the check, but it spans an
+     * SDK_INT guard and sits behind a function boundary, and lint's analysis
+     * follows neither — it sees only an unguarded `notify`. The guard has to be
+     * version-dependent: POST_NOTIFICATIONS does not exist before API 33, where
+     * `checkSelfPermission` answers DENIED for it, so checking unconditionally
+     * would silence reminders on every older phone. Keep [canPost] called here
+     * if this is ever edited; the suppression is only honest while it is.
      */
+    @SuppressLint("MissingPermission")
     fun notifyNow(context: Context) {
         if (!canPost(context)) return
         ensureChannel(context)
