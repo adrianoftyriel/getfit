@@ -178,6 +178,28 @@ fun bestOneRepMax(sets: List<LoggedSet>): Double? =
         .maxOrNull()
 
 /**
+ * The last set of a movement that was actually completed, for seeding a new one.
+ *
+ * An exercise added mid-session has no plan behind it and therefore no targets,
+ * and starting its dial at zero would mean thumbing round three times before
+ * the first set of something done every week. Last time's numbers are the
+ * honest guess at this time's, and they are only a starting position — the dial
+ * still has to be tapped for anything to be logged.
+ *
+ * [sessions] is expected newest-first, which is the order the repository keeps
+ * them in; the first session with a completed set of this movement wins.
+ * Abandoned sets are skipped, because a set that was not finished is not
+ * evidence of what can be lifted.
+ */
+fun lastCompletedSet(sessions: List<WorkoutSession>, exerciseId: String): LoggedSet? =
+    sessions.firstNotNullOfOrNull { session ->
+        session.exercises
+            .filter { it.exerciseId == exerciseId }
+            .flatMap { it.sets }
+            .lastOrNull { it.completed }
+    }
+
+/**
  * Rounded for display — a max estimated to three decimal places is a fiction.
  *
  * Pinned to [Locale.US] so the separator is a point wherever the phone is set.

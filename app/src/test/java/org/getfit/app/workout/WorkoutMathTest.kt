@@ -152,6 +152,73 @@ class WorkoutMathTest {
         assertNull(bestOneRepMax(emptyList()))
     }
 
+    // -- Seeding a movement added mid-session ---------------------------------
+
+    private fun session(id: String, vararg exercises: LoggedExercise) =
+        WorkoutSession(id = id, name = id, startedAt = 0, exercises = exercises.toList())
+
+    @Test
+    fun `an added movement is seeded from the last time it was done`() {
+        val history = listOf(
+            session("today", logged("bench-press", LoggedSet(reps = 5, weightKg = 80.0))),
+            session("last week", logged("bench-press", LoggedSet(reps = 5, weightKg = 75.0))),
+        )
+        assertEquals(80.0, lastCompletedSet(history, "bench-press")!!.weightKg, 0.001)
+    }
+
+    @Test
+    fun `the last set of the session is the one that counts, not the first`() {
+        // Working up to a top set is the normal shape of an exercise, and the
+        // number worth opening the dial on is where it finished.
+        val history = listOf(
+            session(
+                "today",
+                logged(
+                    "back-squat",
+                    LoggedSet(reps = 5, weightKg = 60.0),
+                    LoggedSet(reps = 5, weightKg = 100.0),
+                ),
+            )
+        )
+        assertEquals(100.0, lastCompletedSet(history, "back-squat")!!.weightKg, 0.001)
+    }
+
+    @Test
+    fun `a set that was abandoned is not evidence of what can be lifted`() {
+        val history = listOf(
+            session(
+                "today",
+                logged(
+                    "deadlift",
+                    LoggedSet(reps = 5, weightKg = 140.0),
+                    LoggedSet(reps = 1, weightKg = 200.0, completed = false),
+                ),
+            )
+        )
+        assertEquals(140.0, lastCompletedSet(history, "deadlift")!!.weightKg, 0.001)
+    }
+
+    @Test
+    fun `a session with nothing completed falls through to an older one`() {
+        val history = listOf(
+            session("today", logged("pull-up", LoggedSet(reps = 3, completed = false))),
+            session("last week", logged("pull-up", LoggedSet(reps = 8, weightKg = 10.0))),
+        )
+        val seed = lastCompletedSet(history, "pull-up")!!
+        assertEquals(8, seed.reps)
+        assertEquals(10.0, seed.weightKg, 0.001)
+    }
+
+    @Test
+    fun `a movement never done before has nothing to seed from`() {
+        val history = listOf(session("today", logged("bench-press", LoggedSet(reps = 5))))
+        assertNull(
+            "the caller falls back to a default rather than being handed a guess",
+            lastCompletedSet(history, "lateral-raise"),
+        )
+        assertNull(lastCompletedSet(emptyList(), "bench-press"))
+    }
+
     // -- Display ------------------------------------------------------------
 
     @Test

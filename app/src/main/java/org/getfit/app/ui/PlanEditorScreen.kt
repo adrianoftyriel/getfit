@@ -9,15 +9,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -41,9 +35,7 @@ import kotlinx.coroutines.launch
 import org.getfit.app.settings.UnitSystem
 import org.getfit.app.settings.fromKg
 import org.getfit.app.settings.toKg
-import org.getfit.app.workout.Exercise
 import org.getfit.app.workout.ExerciseCatalog
-import org.getfit.app.workout.MuscleGroup
 import org.getfit.app.workout.PlanExercise
 import org.getfit.app.workout.PlannedSet
 import org.getfit.app.workout.WorkoutPlan
@@ -319,75 +311,5 @@ private fun NumberField(
             keyboardType = if (allowDecimal) KeyboardType.Decimal else KeyboardType.Number,
         ),
         modifier = modifier,
-    )
-}
-
-/** Picking a movement out of the catalogue, grouped so it can be scanned. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ExercisePicker(
-    alreadyIn: Set<String>,
-    onPick: (Exercise) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var group by remember { mutableStateOf<MuscleGroup?>(null) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Add an exercise") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Scrolls sideways rather than wrapping: eight groups will not
-                // fit across a phone, and a wrapped row would push the list
-                // itself off the bottom of the dialog.
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    item {
-                        FilterChip(
-                            selected = group == null,
-                            onClick = { group = null },
-                            label = { Text("All") },
-                        )
-                    }
-                    items(ExerciseCatalog.populatedGroups) { entry ->
-                        FilterChip(
-                            selected = group == entry,
-                            onClick = { group = entry },
-                            label = { Text(entry.label) },
-                        )
-                    }
-                }
-
-                HorizontalDivider()
-
-                val shown = ExerciseCatalog.all.filter { group == null || it.group == group }
-                LazyColumn(modifier = Modifier.height(320.dp)) {
-                    items(shown, key = { it.id }) { exercise ->
-                        val already = exercise.id in alreadyIn
-                        TextButton(
-                            onClick = { onPick(exercise) },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                Text(exercise.name)
-                                // Not disabled: the same movement twice in one
-                                // session is a real thing to plan, so this
-                                // says "already in" rather than refusing.
-                                if (already) {
-                                    Text(
-                                        "already in",
-                                        style = MaterialTheme.typography.labelSmall,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
     )
 }
