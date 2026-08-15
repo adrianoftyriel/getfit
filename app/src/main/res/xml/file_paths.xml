@@ -2,4 +2,10 @@
 <paths>
     <!-- The updater downloads the APK into the app's cache dir. -->
     <cache-path name="updates" path="." />
+
+    <!-- Where the camera writes a progress photo. Its own directory, not the
+         one the finished photographs live in: that one is swept at launch for
+         files no entry refers to, and a frame still being taken refers to
+         nothing yet. -->
+    <files-path name="progress-capture" path="progress-capture/" />
 </paths>

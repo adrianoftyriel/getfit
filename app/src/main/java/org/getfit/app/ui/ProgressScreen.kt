@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -110,6 +111,30 @@ fun ProgressScreen(env: AppEnv, settings: Settings) {
         }
     }
 
+    // Where the camera is writing, held across the trip out to it and back:
+    // the result is only a yes or no, and the frame itself is at this URI.
+    var capturing by remember { mutableStateOf<Uri?>(null) }
+
+    val camera = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture()
+    ) { taken: Boolean ->
+        val target = capturing
+        capturing = null
+        scope.launch {
+            if (!taken || target == null) {
+                env.progress.photos.discardCaptures()
+                return@launch
+            }
+            val stored = env.progress.photos.keepCapture(target)
+            if (stored == null) {
+                problem = "That photo could not be read."
+            } else {
+                draftPhotos.add(stored)
+                problem = null
+            }
+        }
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -135,13 +160,31 @@ fun ProgressScreen(env: AppEnv, settings: Settings) {
                 onWeight = { weight = it },
                 note = note,
                 onNote = { note = it },
-                unitSuffix = units.weightSuffix,
+                units = units,
+                onUnits = { chosen ->
+                    scope.launch { env.settingsRepository.setUnits(chosen) }
+                },
                 problem = problem,
                 onAddPhotos = {
                     problem = null
                     picker.launch(
                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                     )
+                },
+                onTakePhoto = {
+                    problem = null
+                    val target = env.progress.photos.newCaptureUri()
+                    if (target == null) {
+                        problem = "Could not make room for a photo."
+                    } else {
+                        capturing = target
+                        // A phone with no camera app at all resolves nothing
+                        // and throws, which is a message rather than a crash.
+                        runCatching { camera.launch(target) }.onFailure {
+                            capturing = null
+                            problem = "No camera app to open."
+                        }
+                    }
                 },
                 onRemovePhoto = { name ->
                     scope.launch {
@@ -285,9 +328,11 @@ private fun WeighInCard(
     onWeight: (String) -> Unit,
     note: String,
     onNote: (String) -> Unit,
-    unitSuffix: String,
+    units: UnitSystem,
+    onUnits: (UnitSystem) -> Unit,
     problem: String?,
     onAddPhotos: () -> Unit,
+    onTakePhoto: () -> Unit,
     onRemovePhoto: (String) -> Unit,
     onSave: () -> Unit,
 ) {
@@ -298,16 +343,33 @@ private fun WeighInCard(
         ) {
             Text("Record where you are", fontWeight = FontWeight.Bold)
 
-            OutlinedTextField(
-                value = weight,
-                onValueChange = { typed ->
-                    onWeight(typed.filter { it.isDigit() || it == '.' }.take(6))
-                },
-                label = { Text("Weight ($unitSuffix)") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = weight,
+                    onValueChange = { typed ->
+                        onWeight(typed.filter { it.isDigit() || it == '.' }.take(6))
+                    },
+                    label = { Text("Weight") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.weight(1f),
+                )
+                // The same setting the Settings screen holds, offered here
+                // because this is where somebody notices it is wrong. It
+                // changes what is shown and never what is stored: weights are
+                // kilograms underneath, so switching relabels a history rather
+                // than rewriting it.
+                UnitSystem.entries.forEach { unit ->
+                    FilterChip(
+                        selected = units == unit,
+                        onClick = { onUnits(unit) },
+                        label = { Text(unit.weightSuffix) },
+                    )
+                }
+            }
 
             if (draftPhotos.isNotEmpty()) {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -322,19 +384,28 @@ private fun WeighInCard(
                 }
             }
 
-            OutlinedButton(
-                onClick = onAddPhotos,
-                enabled = draftPhotos.size < MAX_PHOTOS_PER_ENTRY,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    if (draftPhotos.isEmpty()) {
-                        "Add photos"
-                    } else {
-                        "${draftPhotos.size} of $MAX_PHOTOS_PER_ENTRY added"
-                    }
-                )
+            val room = draftPhotos.size < MAX_PHOTOS_PER_ENTRY
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onTakePhoto,
+                    enabled = room,
+                    modifier = Modifier.weight(1f),
+                ) { Text("Take a photo") }
+                OutlinedButton(
+                    onClick = onAddPhotos,
+                    enabled = room,
+                    modifier = Modifier.weight(1f),
+                ) { Text("Choose photos") }
             }
+
+            Text(
+                text = if (draftPhotos.isEmpty()) {
+                    "Up to $MAX_PHOTOS_PER_ENTRY per entry."
+                } else {
+                    "${draftPhotos.size} of $MAX_PHOTOS_PER_ENTRY added."
+                },
+                style = MaterialTheme.typography.labelSmall,
+            )
 
             OutlinedTextField(
                 value = note,
