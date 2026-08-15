@@ -76,12 +76,15 @@ fun SettingsScreen(env: AppEnv, settings: Settings) {
                 modifier = Modifier.fillMaxWidth(),
             )
 
+            // Named by the units themselves rather than only by the system they
+            // belong to: "Metric" is what it is called, but "kg" is what
+            // somebody is actually looking for when they come here.
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 UnitSystem.entries.forEach { unit ->
                     FilterChip(
                         selected = settings.units == unit,
                         onClick = { scope.launch { env.settingsRepository.setUnits(unit) } },
-                        label = { Text(unit.label) },
+                        label = { Text("${unit.label} · ${unit.weightSuffix}, ${unit.distanceSuffix}") },
                     )
                 }
             }
