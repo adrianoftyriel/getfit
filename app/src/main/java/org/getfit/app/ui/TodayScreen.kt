@@ -46,7 +46,12 @@ import kotlin.math.roundToInt
  * glanced at rather than tapped.
  */
 @Composable
-fun TodayScreen(env: AppEnv, settings: Settings) {
+fun TodayScreen(
+    env: AppEnv,
+    settings: Settings,
+    onOpenSession: () -> Unit,
+    onBrowsePlans: () -> Unit,
+) {
     val scope = rememberCoroutineScope()
     val active by env.workouts.activeSession.collectAsState(initial = null)
     val sessions by env.workouts.sessions.collectAsState(initial = emptyList())
@@ -74,11 +79,7 @@ fun TodayScreen(env: AppEnv, settings: Settings) {
             if (running != null) {
                 ActiveSessionCard(
                     session = running,
-                    onFinish = {
-                        scope.launch {
-                            env.workouts.finishSession(running.id, System.currentTimeMillis() / 1000)
-                        }
-                    },
+                    onOpen = onOpenSession,
                     onDiscard = { scope.launch { env.workouts.discardSession(running.id) } },
                 )
             } else {
@@ -93,6 +94,10 @@ fun TodayScreen(env: AppEnv, settings: Settings) {
                             style = MaterialTheme.typography.bodySmall,
                         )
                         Button(
+                            onClick = onBrowsePlans,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Start from a plan") }
+                        OutlinedButton(
                             onClick = {
                                 scope.launch {
                                     env.workouts.startSession(
@@ -100,10 +105,11 @@ fun TodayScreen(env: AppEnv, settings: Settings) {
                                         now = System.currentTimeMillis() / 1000,
                                         id = UUID.randomUUID().toString(),
                                     )
+                                    onOpenSession()
                                 }
                             },
                             modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Start an ad-hoc session") }
+                        ) { Text("Train without a plan") }
                     }
                 }
             }
@@ -139,7 +145,7 @@ fun TodayScreen(env: AppEnv, settings: Settings) {
 @Composable
 private fun ActiveSessionCard(
     session: WorkoutSession,
-    onFinish: () -> Unit,
+    onOpen: () -> Unit,
     onDiscard: () -> Unit,
 ) {
     Card(
@@ -161,7 +167,7 @@ private fun ActiveSessionCard(
                 style = MaterialTheme.typography.bodyMedium,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onFinish) { Text("Finish") }
+                Button(onClick = onOpen) { Text("Continue") }
                 OutlinedButton(onClick = onDiscard) { Text("Discard") }
             }
         }

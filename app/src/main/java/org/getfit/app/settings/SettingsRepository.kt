@@ -7,16 +7,41 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import org.getfit.app.workout.ReminderSchedule
+import java.util.Calendar
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
-/** Which units weights and distances are shown in. Storage is always metric. */
+/**
+ * Which units weights are shown in.
+ *
+ * **Storage is always kilograms.** Every weight in the model, every total, and
+ * every stored plan is metric; this converts at the edge, on the way to a field
+ * and back off it. Storing whatever the user last had selected would mean a
+ * training history that changed value when the setting was flipped.
+ */
 enum class UnitSystem(val label: String, val weightSuffix: String) {
     METRIC("Metric", "kg"),
     IMPERIAL("Imperial", "lb"),
+}
+
+/** Exactly, by definition of the international pound. */
+const val KG_PER_LB = 0.45359237
+
+/** Kilograms out of storage, into whatever is being shown. */
+fun UnitSystem.fromKg(kg: Double): Double = when (this) {
+    UnitSystem.METRIC -> kg
+    UnitSystem.IMPERIAL -> kg / KG_PER_LB
+}
+
+/** Whatever was typed, back into the kilograms everything is stored in. */
+fun UnitSystem.toKg(value: Double): Double = when (this) {
+    UnitSystem.METRIC -> value
+    UnitSystem.IMPERIAL -> value * KG_PER_LB
 }
 
 data class Settings(
@@ -32,6 +57,8 @@ data class Settings(
     val units: UnitSystem = UnitSystem.METRIC,
     /** Daily calorie target, or null for no target rather than a target of zero. */
     val calorieTarget: Int? = null,
+    /** When to be reminded to train. Off until asked for. */
+    val reminder: ReminderSchedule = ReminderSchedule(),
     /**
      * Exactly what the user has typed, which may be blank while they are
      * mid-edit. Nothing substitutes a default into this value: doing so would
@@ -55,6 +82,13 @@ class SettingsRepository(private val context: Context) {
         val UNITS = stringPreferencesKey("units")
         val CALORIE_TARGET = intPreferencesKey("calorie_target")
         val NAME = stringPreferencesKey("display_name")
+        val REMINDER_ON = booleanPreferencesKey("reminder_enabled")
+        // Days are Calendar constants held as strings, because DataStore has a
+        // string set and no int set. Anything unparseable is dropped rather
+        // than defaulted to a day nobody asked to be woken on.
+        val REMINDER_DAYS = stringSetPreferencesKey("reminder_days")
+        val REMINDER_HOUR = intPreferencesKey("reminder_hour")
+        val REMINDER_MINUTE = intPreferencesKey("reminder_minute")
         // There is deliberately no update-channel key. The channel is a
         // property of the installed APK, not a preference — an install that
         // could be pointed at the other channel's builds is exactly the mix-up
@@ -72,7 +106,28 @@ class SettingsRepository(private val context: Context) {
             // nobody set and nobody can meet.
             calorieTarget = prefs[Keys.CALORIE_TARGET]?.takeIf { it > 0 },
             displayNameRaw = prefs[Keys.NAME] ?: "",
+            reminder = ReminderSchedule(
+                enabled = prefs[Keys.REMINDER_ON] ?: false,
+                days = prefs[Keys.REMINDER_DAYS].orEmpty()
+                    .mapNotNull { it.toIntOrNull() }
+                    .filter { it in Calendar.SUNDAY..Calendar.SATURDAY }
+                    .toSet(),
+                // Coerced rather than trusted: an hour of 25 would make
+                // nextOccurrence refuse the schedule outright, and a reminder
+                // that silently never fires is worse than one at the wrong time.
+                hour = (prefs[Keys.REMINDER_HOUR] ?: 18).coerceIn(0, 23),
+                minute = (prefs[Keys.REMINDER_MINUTE] ?: 0).coerceIn(0, 59),
+            ),
         )
+    }
+
+    suspend fun setReminder(schedule: ReminderSchedule) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.REMINDER_ON] = schedule.enabled
+            prefs[Keys.REMINDER_DAYS] = schedule.days.map { it.toString() }.toSet()
+            prefs[Keys.REMINDER_HOUR] = schedule.hour.coerceIn(0, 23)
+            prefs[Keys.REMINDER_MINUTE] = schedule.minute.coerceIn(0, 59)
+        }
     }
 
     suspend fun setCheckForUpdatesOnLaunch(enabled: Boolean) {

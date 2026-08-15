@@ -9,7 +9,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import org.getfit.app.demo.DemoRepository
+import org.getfit.app.notify.Reminders
 import org.getfit.app.nutrition.MealEntry
 import org.getfit.app.nutrition.MealInbox
 import org.getfit.app.nutrition.MealLink
@@ -42,9 +45,13 @@ class MainActivity : ComponentActivity() {
             settingsRepository = SettingsRepository(applicationContext),
             workouts = WorkoutRepository(applicationContext),
             nutrition = NutritionRepository(applicationContext),
+            demos = DemoRepository(applicationContext),
             inbox = MealInbox(),
             updater = Updater(this),
         )
+
+        // Cheap, and required before any reminder can be posted.
+        Reminders.ensureChannel(applicationContext)
 
         // Both documents are read off disk once, here, rather than by whichever
         // screen happens to be drawn first. Until this finishes the repositories
@@ -53,6 +60,12 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             env.workouts.load()
             env.nutrition.load()
+
+            // Re-arm on every launch as well as on boot. An alarm can be lost
+            // to a force-stop or to the battery optimiser, neither of which
+            // sends a broadcast, and the failure is invisible: reminders simply
+            // stop. Opening the app is the one moment we can put that right.
+            Reminders.sync(applicationContext, env.settingsRepository.settings.first().reminder)
         }
 
         handleIntent(intent)
